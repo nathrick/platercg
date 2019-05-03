@@ -1,8 +1,9 @@
 #ifndef KNN_RCG_HPP
 #define KNN_RCG_HPP
 
-#include "character.hpp"
-#include "plate.hpp"
+#include "Character.hpp"
+#include "Plate.hpp"
+#include "IStrategy.hpp"
 
 #include <memory>
 #include <opencv2/core/core.hpp>
@@ -10,11 +11,11 @@
 
 namespace platercg
 {
-class KNN_Rcg
+class KnnStrategy
 {
 public:
-    KNN_Rcg(const std::string& lblFile, const std::string &datFile);
-    ~KNN_Rcg();
+    KnnStrategy(const std::string& lblFile, const std::string &datFile);
+    ~KnnStrategy();
 
     std::vector<plate::Plate> licensePlates(cv::Mat frame) const;
 

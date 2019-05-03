@@ -1,6 +1,7 @@
 #ifndef PLATERCG_HPP
 #define PLATERCG_HPP
 
-#include "platercg/knn_rcg.hpp"
+
+#include "platercg/KnnStrategy.hpp"
 
 #endif
