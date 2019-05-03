@@ -1,5 +1,5 @@
 #include "../include/platercg/character.hpp"
-#include "../include/platercg/knn_rcg.hpp"
+#include "../include/platercg/KnnStrategy.hpp"
 #include "../include/platercg/plate.hpp"
 
 #include <opencv2/highgui/highgui.hpp>
@@ -25,7 +25,6 @@ constexpr auto RESIZED_CHAR_IMAGE_WIDTH = 20;
 constexpr auto RESIZED_CHAR_IMAGE_HEIGHT = 30;
 
 constexpr auto MIN_DIAG_SIZE_MULTIPLE_AWAY = 0.3;
-constexpr auto MAX_DIAG_SIZE_MULTIPLE_AWAY = 5.0;
 
 const cv::Scalar SCALAR_BLACK = cv::Scalar(0.0, 0.0, 0.0);
 const cv::Scalar SCALAR_WHITE = cv::Scalar(255.0, 255.0, 255.0);
@@ -33,9 +32,10 @@ const cv::Scalar SCALAR_YELLOW = cv::Scalar(0.0, 255.0, 255.0);
 const cv::Scalar SCALAR_GREEN = cv::Scalar(0.0, 255.0, 0.0);
 const cv::Scalar SCALAR_RED = cv::Scalar(0.0, 0.0, 255.0);
 
+using Char = character::Character;
+using CharVect = std::vector<Char>;
 
-
-class KNN_Rcg::Impl
+class KnnStrategy::Impl
 {
 public:
     Impl();
@@ -46,13 +46,13 @@ public:
     cv::Mat extractValue(cv::Mat &imgOriginal);
     cv::Mat maximizeContrast(cv::Mat &imgGrayscale);
 
-    std::vector<character::Character> findChars(cv::Mat &imgTresh);
-    std::vector<character::Character> findMatchingChars(const character::Character& inputChar, std::vector<character::Character> &inputChars);
-    std::vector<std::vector<character::Character>> findGroupsOfMatchingChars(std::vector<character::Character>& inputChars);
+    CharVect findChars(cv::Mat &imgTresh);
+    CharVect findMatchingChars(const character::Character& inputChar, CharVect &inputChars);
+    std::vector<CharVect> findGroupsOfMatchingChars(CharVect& inputChars);
 
-    plate::Plate extractPlate(cv::Mat &imgOriginal, std::vector<character::Character> &chars);
-    void removeOverlappingChars(std::vector<character::Character>& charGroup);
-    std::string recognizeCharsInPlate(cv::Mat &imgThresh, std::vector<character::Character> &charGroup);
+    plate::Plate extractPlate(cv::Mat &imgOriginal, CharVect &chars);
+    void removeOverlappingChars(CharVect& charGroup);
+    std::string recognizeCharsInPlate(cv::Mat &imgThresh, CharVect &charGroup);
 
 private:
     cv::Mat m_trainData;
@@ -61,20 +61,20 @@ private:
     cv::Ptr<cv::ml::KNearest> m_kNearest;
 };
 
-KNN_Rcg::Impl::Impl()
+KnnStrategy::Impl::Impl()
 {
     m_kNearest = cv::ml::KNearest::create();
 
     std::cout << "knearest created..." << std::endl;
 }
 
-bool KNN_Rcg::Impl::trainKNN()
+bool KnnStrategy::Impl::trainKNN()
 {
     m_kNearest->setDefaultK(1);
     return m_kNearest->train(m_trainData, cv::ml::ROW_SAMPLE, m_trainLabels);
 }
 
-bool KNN_Rcg::Impl::loadKNNData(const std::string &lblFile, const std::string &datFile)
+bool KnnStrategy::Impl::loadKNNData(const std::string &lblFile, const std::string &datFile)
 {
     cv::FileStorage labelsFile(lblFile.c_str(), cv::FileStorage::READ);
 
@@ -101,7 +101,7 @@ bool KNN_Rcg::Impl::loadKNNData(const std::string &lblFile, const std::string &d
     return true;
 }
 
-void KNN_Rcg::Impl::preprocess(cv::Mat &imgOriginal, cv::Mat &imgGrayscale, cv::Mat &imgThresh)
+void KnnStrategy::Impl::preprocess(cv::Mat &imgOriginal, cv::Mat &imgGrayscale, cv::Mat &imgThresh)
 {
     imgGrayscale = extractValue(imgOriginal);
     cv::Mat imgMaxContrastGrayscale = maximizeContrast(imgGrayscale);
@@ -121,7 +121,7 @@ void KNN_Rcg::Impl::preprocess(cv::Mat &imgOriginal, cv::Mat &imgGrayscale, cv::
                           ADAPTIVE_THRESH_WEIGHT);
 }
 
-cv::Mat KNN_Rcg::Impl::extractValue(cv::Mat &imgOriginal)
+cv::Mat KnnStrategy::Impl::extractValue(cv::Mat &imgOriginal)
 {
     cv::Mat imgHSV;
     std::vector<cv::Mat> vectorOfHSVImages;
@@ -132,7 +132,7 @@ cv::Mat KNN_Rcg::Impl::extractValue(cv::Mat &imgOriginal)
     return vectorOfHSVImages[2];
 }
 
-cv::Mat KNN_Rcg::Impl::maximizeContrast(cv::Mat &imgGrayscale)
+cv::Mat KnnStrategy::Impl::maximizeContrast(cv::Mat &imgGrayscale)
 {
     cv::Mat imgTopHat;
     cv::Mat imgBlackHat;
@@ -151,9 +151,9 @@ cv::Mat KNN_Rcg::Impl::maximizeContrast(cv::Mat &imgGrayscale)
     return imgGrayscalePlusTopHatMinusBlackHat;
 }
 
-std::vector<character::Character> KNN_Rcg::Impl::findChars(cv::Mat &imgTresh)
+CharVect KnnStrategy::Impl::findChars(cv::Mat &imgTresh)
 {
-    std::vector<character::Character> result;
+    CharVect result;
 
     cv::Mat imgContours(imgTresh.size(), CV_8UC3, SCALAR_BLACK);
     cv::Mat imgThreshCopy = imgTresh.clone();
@@ -161,11 +161,11 @@ std::vector<character::Character> KNN_Rcg::Impl::findChars(cv::Mat &imgTresh)
     std::vector<std::vector<cv::Point> > contours;
     cv::findContours(imgThreshCopy, contours, cv::RETR_LIST, cv::CHAIN_APPROX_SIMPLE);
 
-    for (unsigned int i = 0; i < contours.size(); i++)
+    for(auto &c : contours)
     {
-        character::Character possibleChar(contours[i]);
+        character::Character possibleChar(c);
 
-        if (possibleChar.firstPassCheck())
+        if(possibleChar.firstPassCheck())
         {
             result.push_back(possibleChar);
         }
@@ -174,9 +174,9 @@ std::vector<character::Character> KNN_Rcg::Impl::findChars(cv::Mat &imgTresh)
     return result;
 }
 
-std::vector<character::Character> KNN_Rcg::Impl::findMatchingChars(const character::Character &inputChar, std::vector<character::Character> &inputChars)
+CharVect KnnStrategy::Impl::findMatchingChars(const character::Character &inputChar, CharVect &inputChars)
 {
-    std::vector<character::Character> result;
+    CharVect result;
 
     if(!inputChar.alreadyMatch())
     {
@@ -196,15 +196,15 @@ std::vector<character::Character> KNN_Rcg::Impl::findMatchingChars(const charact
     return result;
 }
 
-std::vector<std::vector<character::Character> > KNN_Rcg::Impl::findGroupsOfMatchingChars(std::vector<character::Character> &inputChars)
+std::vector<CharVect> KnnStrategy::Impl::findGroupsOfMatchingChars(CharVect &inputChars)
 {
-    std::vector<std::vector<character::Character>> result;
+    std::vector<CharVect> result;
 
     for(auto &inputChar : inputChars)
     {
         if(!inputChar.alreadyMatch())
         {
-            std::vector<character::Character> matchingChars = findMatchingChars(inputChar, inputChars);
+            CharVect matchingChars = findMatchingChars(inputChar, inputChars);
 
             /* Set input char as a match and add to a group */
             inputChar.setAlreadyMatch(true);
@@ -222,7 +222,7 @@ std::vector<std::vector<character::Character> > KNN_Rcg::Impl::findGroupsOfMatch
     return result;
 }
 
-plate::Plate KNN_Rcg::Impl::extractPlate(cv::Mat &imgOriginal, std::vector<character::Character> &chars)
+plate::Plate KnnStrategy::Impl::extractPlate(cv::Mat &imgOriginal, CharVect &chars)
 {
     plate::Plate resultPlate;
 
@@ -274,7 +274,7 @@ plate::Plate KNN_Rcg::Impl::extractPlate(cv::Mat &imgOriginal, std::vector<chara
     return resultPlate;
 }
 
-void KNN_Rcg::Impl::removeOverlappingChars(std::vector<character::Character> &charGroup)
+void KnnStrategy::Impl::removeOverlappingChars(CharVect &charGroup)
 {
     for(auto& ch : charGroup)
     {
@@ -302,18 +302,12 @@ void KNN_Rcg::Impl::removeOverlappingChars(std::vector<character::Character> &ch
     }), charGroup.end());
 }
 
-std::string KNN_Rcg::Impl::recognizeCharsInPlate(cv::Mat &imgThresh, std::vector<character::Character> &charGroup)
+std::string KnnStrategy::Impl::recognizeCharsInPlate(cv::Mat &imgThresh, CharVect &charGroup)
 {
     std::string strChars;
 
-    //cv::Mat imgThreshColor;
-
-    //cv::cvtColor(imgThresh, imgThreshColor, cv::COLOR_GRAY2BGR); // make color version of threshold image so we can draw contours in color on it
-
     for (auto &currentChar : charGroup)
     {
-        //cv::rectangle(imgThreshColor, currentChar.boundingRect(), SCALAR_GREEN, 2); // draw green box around the char
-
         cv::Mat imgROItoBeCloned = imgThresh(currentChar.boundingRect()); // get ROI image of bounding rect
         cv::Mat imgROI = imgROItoBeCloned.clone();          // clone ROI image so we don't change original when we resize
 
@@ -332,8 +326,6 @@ std::string KNN_Rcg::Impl::recognizeCharsInPlate(cv::Mat &imgThresh, std::vector
         float fltCurrentChar = matCurrentChar.at<float>(0, 0); // convert current char from Mat to float
 
         strChars += char(int(fltCurrentChar)); // append current char to full string
-
-        //cv::imshow("last processed plate", imgThreshColor);
     }
 
     return strChars;
@@ -342,7 +334,7 @@ std::string KNN_Rcg::Impl::recognizeCharsInPlate(cv::Mat &imgThresh, std::vector
 
 /* KNN_Rcg */
 
-KNN_Rcg::KNN_Rcg(const std::string &lblFile, const std::string &datFile) :
+KnnStrategy::KnnStrategy(const std::string &lblFile, const std::string &datFile) :
     m_labelsFile(lblFile),
     m_dataFile(datFile),
     m_pImpl(std::make_unique<Impl>())
@@ -361,9 +353,9 @@ KNN_Rcg::KNN_Rcg(const std::string &lblFile, const std::string &datFile) :
 
 }
 
-KNN_Rcg::~KNN_Rcg() = default;
+KnnStrategy::~KnnStrategy() = default;
 
-std::vector<plate::Plate> KNN_Rcg::licensePlates(cv::Mat frame) const
+std::vector<plate::Plate> KnnStrategy::licensePlates(cv::Mat frame) const
 {
     auto plates = possiblePlates(frame);
 
@@ -378,9 +370,9 @@ std::vector<plate::Plate> KNN_Rcg::licensePlates(cv::Mat frame) const
                       255.0,
                       cv::THRESH_BINARY | cv::THRESH_OTSU);
 
-        std::vector<character::Character> possibleChars = m_pImpl.get()->findChars(plate.m_imgThresh);
+        CharVect possibleChars = m_pImpl.get()->findChars(plate.m_imgThresh);
 
-        std::vector<std::vector<character::Character>> groupsOfMatchingChar = m_pImpl.get()->findGroupsOfMatchingChars(possibleChars);
+        std::vector<CharVect> groupsOfMatchingChar = m_pImpl.get()->findGroupsOfMatchingChars(possibleChars);
         if(groupsOfMatchingChar.empty())
         {
             plate.m_strChars = "";
@@ -410,7 +402,7 @@ std::vector<plate::Plate> KNN_Rcg::licensePlates(cv::Mat frame) const
     return plates;
 }
 
-std::vector<plate::Plate> KNN_Rcg::possiblePlates(cv::Mat frame) const
+std::vector<plate::Plate> KnnStrategy::possiblePlates(cv::Mat frame) const
 {
     std::vector<plate::Plate> plates;
 
@@ -419,9 +411,9 @@ std::vector<plate::Plate> KNN_Rcg::possiblePlates(cv::Mat frame) const
 
     m_pImpl.get()->preprocess(frame, imgGrayscale, imgThresh);
 
-    std::vector<character::Character> possibleCharacters = m_pImpl.get()->findChars(imgThresh);
+    CharVect possibleCharacters = m_pImpl.get()->findChars(imgThresh);
 
-    std::vector<std::vector<character::Character>> groupsOfMatchingChar = m_pImpl.get()->findGroupsOfMatchingChars(possibleCharacters);
+    std::vector<CharVect> groupsOfMatchingChar = m_pImpl.get()->findGroupsOfMatchingChars(possibleCharacters);
 
     for(auto &group : groupsOfMatchingChar)
     {

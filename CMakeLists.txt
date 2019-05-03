@@ -51,14 +51,15 @@ else()
 endif()
 
 set(SOURCE_FILES
-    ${PROJECT_NAME}/character.cpp
-    ${PROJECT_NAME}/knn_rcg.cpp
+    ${PROJECT_NAME}/Character.cpp
+    ${PROJECT_NAME}/KnnStrategy.cpp
     )
 
 
 set(HEADER_FILES
-    include/${PROJECT_NAME}/platercg.hpp
-    include/${PROJECT_NAME}/knn_rcg.hpp
+    include/${PROJECT_NAME}/PlateRcg.hpp
+    include/${PROJECT_NAME}/IStrategy.hpp
+    include/${PROJECT_NAME}/KnnStrategy.hpp
     )
 
 add_library(${PROJECT_NAME} ${SOURCE_FILES} ${HEADER_FILES})
@@ -68,7 +69,7 @@ find_package(OpenCV REQUIRED)
 set_target_properties(${PROJECT_NAME} PROPERTIES
     			VERSION ${PROJECT_VERSION}
     			SOVERSION 1
-                        PUBLIC_HEADER include/${PROJECT_NAME}/platercg.hpp)
+                        PUBLIC_HEADER include/${PROJECT_NAME}/PlateRcg.hpp)
 
 configure_file(${PROJECT_NAME}.pc.in ${PROJECT_NAME}.pc @ONLY)
 
